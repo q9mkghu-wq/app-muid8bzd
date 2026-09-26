@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>공장 상품 위치 관리 시스템</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #2d3748; }
+
+  header {
+    background: linear-gradient(135deg, #1a365d, #2b6cb0);
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  header h1 { font-size: 1.4rem; font-weight: 700; }
+  header span { font-size: 1.8rem; }
+
+  .main-container {
+    display: flex;
+    height: calc(100vh - 64px);
+    overflow: hidden;
+  }
+
+  /* 사이드바 */
+  .sidebar {
+    width: 320px;
+    min-width: 280px;
+    background: white;
+    border-right: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 16px;
+    background: #ebf4ff;
+    border-bottom: 1px solid #bee3f8;
+  }
+  .sidebar-header h2 { font-size: 1rem; color: #2c5282; margin-bottom: 10px; }
+
+  .add-form { display: flex; flex-direction: column; gap: 8px; }
+  .add-form input, .add-form select, .add-form textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: white;
+  }
+  .add-form textarea { resize: vertical; height: 50px; }
+  .btn-add {
+    background: #2b6cb0;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: background 0.2s;
+  }
+  .btn-add:hover { background: #2c5282; }
+
+  .product-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+  }
+  .product-list h3 { font-size: 0.9rem; color: #718096; margin-bottom: 10px; font-weight: 600; }
+
+  .product-item {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 4px solid #ccc;
+  }
+  .product-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); transform: translateX(2px); }
+  .product-item.selected { box-shadow: 0 2px 12px rgba(43,108,176,0.3); }
+  .product-item .p-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 3px; }
+  .product-item .p-zone { font-size: 0.78rem; color: #718096; }
+  .product-item .p-note { font-size: 0.78rem; color: #a0aec0; margin-top: 3px; font-style: italic; }
+  .product-item .p-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .btn-small {
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .btn-locate { background: #ebf8ff; color: #2b6cb0; }
+  .btn-locate:hover { background: #bee3f8; }
+  .btn-delete { background: #fff5f5; color: #c53030; }
+  .btn-delete:hover { background: #fed7d7; }
+
+  /* 지도 영역 */
+  .map-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .map-toolbar {
+    padding: 10px 16px;
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .map-toolbar label { font-size: 0.85rem; font-weight: 600; color: #4a5568; }
+  .map-toolbar select, .map-toolbar input {
+    padding: 6px 10px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+  .mode-btns { display: flex; gap: 6px; margin-left: auto; }
+  .btn-mode {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #cbd5e0;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: white;
+    transition: all 0.2s;
+  }
+  .btn-mode.active { background: #2b6cb0; color: white; border-color: #2b6cb0; }
+  .btn-mode:hover:not(.active) { background: #edf2f7; }
+
+  .map-canvas-wrapper {
+    flex: 1;
+    overflow: auto;
+    position: relative;
+    background: #dde8f0;
+  }
+
+  #factory-canvas {
+    display: block;
+    cursor: crosshair;
+    background: #f7fafc;
+  }
+
+  /* 구역 관리 패널 */
+  .zone-panel {
+    width: 200px;
+    min-width: 180px;
+    background: white;
+    border-left: 1px solid #e2e8f0;
+    padding: 12px;
+    overflow-y: auto;
+  }
+  .zone-panel h3 { font-size: 0.9rem; color: #4a5568; margin-bottom: 10px; font-weight: 700; }
+  .zone-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .zone-item:hover { background: #edf2f7; }
+  .zone-color { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .zone-count { margin-left: auto; background: #edf2f7; border-radius: 10px; padding: 1px 7px; font-size: 0.75rem; color: #4a5568; }
+
+  .add-zone-form { margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+  .add-zone-form input { width: 100%; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 5px; font-size: 0.8rem; margin-bottom: 6px; }
+  .add-zone-form .color-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .color-dot {
+    width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; transition: border-color 0.15s;
+  }
+  .color-dot.selected { border-color: #2d3748; }
+  .btn-add-zone {
+    width: 100%; padding: 6px; background: #48bb78; color: white;
+    border: none; border-radius: 5px; cursor: pointer; font-size: 0.8rem; font-weight: 600;
+  }
+  .btn-add-zone:hover { background: #38a169; }
+
+  /* 팝업 */
+  .popup-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .popup-overlay.show { display: flex; }
+  .popup-box {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    width: 360px;
+    max-width: 95vw;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .popup-box h3 { font-size: 1.1rem; margin-bottom: 16px; color: #2c5282; }
+  .popup-box label { font-size: 0.85rem; font-weight: 600; color: #4a5568; display: block; margin-bottom: 4px; }
+  .popup-box select, .popup-box input, .popup-box textarea {
+    width: 100%; padding: 8px 10px;
+    border: 1px solid #cbd5e0; border-radius: 6px;
+    font-size: 0.85rem; margin-bottom: 12px;
+  }
+  .popup-box textarea { height: 60px; resize: vertical; }
+  .popup-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn-cancel { padding: 8px 16px; background: #edf2f7; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+  .btn-confirm { padding: 8px 16px; background: #2b6cb0; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+
+  .tooltip {
+    position: absolute;
+    background: rgba(26,54,93,0.95);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    pointer-events: none;
+    z-index: 100;
+    max-width: 200px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    display: none;
+  }
+  .tooltip .tt-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 3px; }
+  .tooltip .tt-zone { color: #90cdf4; }
+  .tooltip .tt-note { color: #e2e8f0; font-style: italic; margin-top: 2px; }
+
+  .legend {
+    padding: 8px 16px;
+    background: #f7fafc;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+    color: #718096;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-icon { width: 12px; height: 12px; border-radius: 50%; }
+
+  @media (max-width: 768px) {
+    .main-container { flex-direction: column; height: auto; }
+    .sidebar { width: 100%; height: auto; }
+    .zone-panel { display: none; }
+    .map-canvas-wrapper { height: 60vw; min-height: 300px; }
+  }
+
+  .status-bar {
+    padding: 4px 16px;
+    background: #2d3748;
+    color: #a0aec0;
+    font-size: 0.75rem;
+    display: flex;
+    gap: 16px;
+  }
+  .status-bar span { color: #68d391; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <span>🏭</span>
+  <h1>공장 상품 위치 관리 시스템</h1>
+</header>
+<div class="status-bar">
+  <div>총 상품: <span id="stat-total">0</span>개</div>
+  <div>구역 수: <span id="stat-zones">0</span>개</div>
+  <div id="stat-msg" style="color:#fbd38d;">실시간 동기화 중...</div>
+</div>
+
+<div class="main-container">
+  <!-- 사이드바 -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h2>📦 상품 등록</h2>
+      <div class="add-form">
+        <input type="text" id="inp-product" placeholder="상품명 입력" />
+        <select id="inp-zone">
+          <option value="">-- 구역 선택 --</option>
+        </select>
+        <textarea id="inp-note" placeholder="세부 위치 설명 (예: 3번 선반 2단)"></textarea>
+        <button class="btn-add" onclick="addProduct()">+ 상품 등록</button>
+      </div>
+    </div>
+    <div class="product-list">
+      <h3>📋 등록된 상품 목록</h3>
+      <div id="product-list-container"></div>
+    </div>
+  </div>
+
+  <!-- 지도 영역 -->
+  <div class="map-area">
+    <div class="map-toolbar">
+      <label>🗺️ 지도 보기</label>
+      <div class="mode-btns">
+        <button class="btn-mode active" id="mode-view" onclick="setMode('view')">👁️ 보기</button>
+        <button class="btn-mode" id="mode-draw" onclick="setMode('draw')">✏️ 구역 그리기</button>
+      </div>
+      <button style="padding:6px 12px;background:#e53e3e;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;font-weight:600;margin-left:8px;" onclick="clearCanvas()">🗑️ 초기화</button>
+    </div>
+    <div class="map-canvas-wrapper" id="canvas-wrapper">
+      <canvas id="factory-canvas" width="900" height="600"></canvas>
+      <div class="tooltip" id="tooltip">
+        <div class="tt-name" id="tt-name"></div>
+        <div class="tt-zone" id="tt-zone"></div>
+        <div class="tt-note" id="tt-note"></div>
+      </div>
+    </div>
+    <div class="legend" id="legend-bar"></div>
+  </div>
+
+  <!-- 구역 패널 -->
+  <div class="zone-panel">
+    <h3>🏷️ 구역 관리</h3>
+    <div id="zone-list"></div>
+    <div class="add-zone-form">
+      <div style="font-size:0.8rem;font-weight:700;color:#4a5568;margin-bottom:6px;">구역 추가</div>
+      <input type="text" id="inp-zone-name" placeholder="구역명 (예: A창고)" />
+      <div class="color-row" id="color-picker"></div>
+      <button class="btn-add-zone" onclick="addZone()">+ 구역 추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- 팝업: 구역에 상품 배치 -->
+<div class="popup-overlay" id="place-popup">
+  <div class="popup-box">
+    <h3>📍 상품 위치 지정</h3>
+    <label>상품명</label>
+    <input type="text" id="pp-name" placeholder="상품명" />
+    <label>구역</label>
+    <select id="pp-zone"></select>
+    <label>세부 설명</label>
+    <textarea id="pp-note" placeholder="세부 위치 설명"></textarea>
+    <div class="popup-actions">
+      <button class="btn-cancel" onclick="closePopup()">취소</button>
+      <button class="btn-confirm" onclick="confirmPlace()">배치 확인</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const firebaseConfig = {"apiKey":"AIzaSyAA9XxN-Pw0vbLT0f8-mI2bV0FgEx18iIU","authDomain":"appbuilder-4e83c.firebaseapp.com","projectId":"appbuilder-4e83c","storageBucket":"appbuilder-4e83c.firebasestorage.app","messagingSenderId":"1038242551917","appId":"1:1038242551997:web:4d59995638762401dd0764"};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ─── 상태 ───
+let products = [];
+let zones = [
+  { id: 'z1', name: 'A구역', color: '#f6ad55' },
+  { id: 'z2', name: 'B구역', color: '#68d391' },
+  { id: 'z3', name: 'C구역', color: '#63b3ed' },
+  { id: 'z4', name: 'D구역', color: '#fc8181' },
+];
+let mode = 'view';
+let selectedProduct = null;
+let pendingPlace = null; // {x, y} 클릭 위치
+let drawStart = null;
+let drawRect = null;
+let drawnZones = []; // {id, name, color, x, y, w, h}
+
+const PALETTE = ['#f6ad55','#68d391','#63b3ed','#fc8181','#b794f4','#f687b3','#4fd1c5','#e53e3e','#2b6cb0','#276749'];
+let selectedColor = PALETTE[0];
+
+// ─── 캔버스 ───
+const canvas = document.getElementById('factory-canvas');
+const ctx = canvas.getContext('2d');
+const wrapper = document.getElementById('canvas-wrapper');
+
+function resizeCanvas() {
+  const w = Math.max(wrapper.clientWidth, 600);
+  const h = Math.max(wrapper.clientHeight, 400);
+  canvas.width = w;
+  canvas.height = h;
+  redraw();
+}
+
+// ─── Firebase 실시간 동기화 ───
+db.collection("apps/app-muid8bzd/items").onSnapshot(snapshot => {
+  products = [];
+  drawnZones = [];
+  snapshot.forEach(doc => {
+    const d = { id: doc.id, ...doc.data() };
+    if (d.type === 'product') products.push(d);
+    if (d.type === 'drawnZone') drawnZones.push(d);
+    if (d.type === 'zone') {
+      // 커스텀 존 복원
+      if (!zones.find(z => z.id === d.zoneId)) {
+        zones.push({ id: d.zoneId, name: d.name, color: d.color });
+      }
+    }
+  });
+  updateStat();
+  renderProductList();
+  renderZoneList();
+  updateZoneSelects();
+  redraw();
+  document.getElementById('stat-msg').textContent = '✅ 실시간 동기화됨';
+}, err => {
+  document.getElementById('stat-msg').textContent = '⚠️ 연결 오류';
+});
+
+// ─── 상품 추가 ───
+function addProduct() {
+  const name = document.getElementById('inp-product').value.trim();
+  const zone = document.getElementById('inp-zone').value;
+  const note = document.getElementById('inp-note').value.trim();
+  if (!name) { alert('상품명을 입력하세요.'); return; }
+  if (!zone) { alert('구역을 선택하세요.'); return; }
+  const zoneObj = zones.find(z => z.id === zone);
+  db.collection("apps/app-muid8bzd/items").add({
+    type: 'product',
+    name, zoneId: zone,
+    zoneName: zoneObj ? zoneObj.name : '',
+    zoneColor: zoneObj ? zoneObj.color : '#ccc',
+    note,
+    x: null, y: null,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  document.getElementById('inp-product').value = '';
+  document.getElementById('inp-note').value = '';
+  document.getElementById('inp-zone').value = '';
+}
+
+// ─── 구역 추가 ───
+function addZone() {
+  const name = document.getElementById('inp-zone-name').value.trim();
+  if (!name) { alert('구역명을 입력하세요.'); return; }
+  const id = 'z_' + Date.now();
+  zones.push({ id, name, color: selectedColor });
+  db.collection("apps/app-muid8bzd/items").add({
+    type: 'zone', zoneId: id, name, color: selectedColor
+  });
+  document.getElementById('inp-zone-name').value = '';
+  updateZoneSelects();
+  renderZoneList();
+}
+
+// ─── 목록 렌더 ───
+function renderProductList() {
+  const c = document.getElementById('product-list-container');
+  if (products.length === 0) {
+    c.innerHTML = '<div style="color:#a0aec0;font-size:0.82rem;text-align:center;margin-top:20px;">등록된 상품이 없습니다</div>';
+    return;
+  }
+  c.innerHTML = '';
+  products.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'product-item' + (selectedProduct && selectedProduct.id === p.id ? ' selected' : '');
+    div.style.borderLeftColor = p.zoneColor || '#ccc';
+    div.innerHTML = `
+      <div class="p-name">📦 ${p.name}</div>
+      <div class="p-zone">🏷️ ${p.zoneName || '미배정'} ${p.x != null ? '📍 지도 배치됨' : '⬜ 미배치'}</div>
+      ${p.note ? `<div class="p-note">💬 ${p.note}</div>` : ''}
+      <div class="p-actions">
+        <button class="btn-small btn-locate" onclick="locateProduct('${p.id}')">📍 위치 표시</button>
+        <button class="btn-small btn-delete" onclick="deleteProduct('${p.id}')">🗑️ 삭제</button>
+      </div>`;
+    c.appendChild(div);
+  });
+}
+
+function renderZoneList() {
+  const c = document.getElementById('zone-list');
+  c.innerHTML = '';
+  zones.forEach(z => {
+    const count = products.filter(p => p.zoneId === z.id).length;
+    const div = document.createElement('div');
+    div.className = 'zone-item';
+    div.innerHTML = `<div class="zone-color" style="background:${z.color}"></div>
+      <span>${z.name}</span>
+      <span class="zone-count">${count}</span>`;
+    div.onclick = () => highlightZone(z.id);
+    c.appendChild(div);
+  });
+  // 범례
+  const leg = document.getElementById('legend-bar');
+  leg.innerHTML = '';
+  zones.forEach(z => {
+    const div = document.createElement('div');
+    div.className = 'legend-item';
+    div.innerHTML = `<div class="legend-icon" style="background:${z.color}"></div><span>${z.name}</span>`;
+    leg.appendChild(div);
+  });
+  document.getElementById('stat-zones').textContent = zones.length;
+}
+
+function updateZoneSelects() {
+  ['inp-zone','pp-zone'].forEach(id => {
+    const sel = document.getElementById(id);
+    const val = sel.value;
+    sel.innerHTML = '<option value="">-- 구역 선택 --</option>';
+    zones.forEach(z => {
+      sel.innerHTML += `<option value="${z.id}">${z.name}</option>`;
+    });
+    sel.value = val;
+  });
+}
+
+function updateStat() {
+  document.getElementById('stat-total').textContent = products.length;
+}
+
+// ─── 상품 삭제 ───
+function deleteProduct(id) {
+  if (!confirm('이 상품을 삭제하시겠습니까?')) return;
+  db.collection("apps/app-muid8bzd/items").doc(id).delete();
+  if (selectedProduct && selectedProduct.id === id) selectedProduct = null;
+}
+
+// ─── 상품 위치 표시 ───
+function locateProduct(id) {
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+  selectedProduct = p;
+  if (p.x != null) {
+    redraw();
+    // 해당 위치로 스크롤
+    wrapper.scrollTo({ left: p.x - 200, top: p.y - 150, behavior: 'smooth' });
+  } else {
+    alert(`"${p.name}"은 아직 지도에 배치되지 않았습니다.\n보기 모드에서 지도를 클릭하여 배치하세요.`);
+  }
+  renderProductList();
+  redraw();
+}
+
+function highlightZone(zoneId) {
+  selectedProduct = null;
+  redraw(zoneId);
+}
+
+// ─── 모드 ───
+function setMode(m) {
+  mode = m;
+  document.getElementById('mode-view').classList.toggle('active', m === 'view');
+  document.getElementById('mode-draw').classList.toggle('active', m === 'draw');
+  canvas.style.cursor = m === 'draw' ? 'crosshair' : 'default';
+}
+
+// ─── 캔버스 그리기 ───
+function redraw(highlightZoneId) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // 배경 격자
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < canvas.width; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+  for (let y = 0; y < canvas.height; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
+
+  // 그려진 구역 박스
+  drawnZones.forEach(dz => {
+    const z = zones.find(z => z.id === dz.zoneId) || { color: '#ccc' };
+    const isHL = highlightZoneId === dz.zoneId;
+    ctx.save();
+    ctx.globalAlpha = isHL ? 0.5 : 0.2;
+    ctx.fillStyle = z.color;
+    ctx.fillRect(dz.x, dz.y, dz.w, dz.h);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = z.color;
+    ctx.lineWidth = isHL ? 3 : 2;
+    ctx.setLineDash(isHL ? [] : [6,3]);
+    ctx.strokeRect(dz.x, dz.y, dz.w, dz.h);
+    ctx.setLineDash([]);
+    ctx.fillStyle = z.color;
+    ctx.font = 'bold 13px Segoe UI';
+    ctx.fillText(dz.name, dz.x + 8, dz.y + 18);
+    ctx.restore();
+  });
+
+  // 드래그 중인 박스
+  if (drawRect && mode === 'draw') {
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = selectedColor;
+    ctx.fillRect(drawRect.x, drawRect.y, drawRect.w, drawRect.h);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = selectedColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4,2]);
+    ctx.strokeRect(drawRect.x, drawRect.y, drawRect.w, drawRect.h);
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // 상품 마커
+  products.forEach(p => {
+    if (p.x == null || p.y == null) return;
+    const isSelected = selectedProduct && selectedProduct.id === p.id;
+    const isHL = highlightZoneId && p.zoneId === highlightZoneId;
+    ctx.save();
+    // 핀
+    const r = isSelected ? 14 : 11;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - r, r, 0, Math.PI * 2);
+    ctx.fillStyle = p.zoneColor || '#2b6cb0';
+    ctx.fill();
+    ctx.strokeStyle = isSelected ? '#fff' : 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = isSelected ? 3 : 1.5;
+    ctx.stroke();
+    // 핀 꼬리
+    ctx.beginPath();
+    ctx.moveTo(p.x - 5, p.y - 5);
+    ctx.lineTo(p.x, p.y);
+    ctx.lineTo(p.x + 5, p.y - 5);
+    ctx.fillStyle = p.zoneColor || '#2b6cb0';
+    ctx.fill();
+    // 아이콘
+    ctx.fillStyle = 'white';
+    ctx.font = `bold ${isSelected ? 11 : 9}px Segoe UI`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('📦', p.x, p.y - r);
+    // 이름 라벨
+    if (isSelected || isHL) {
+      ctx.fillStyle = 'rgba(26,54,93,0.9)';
+      const tw = ctx.measureText(p.name).width + 14;
+      ctx.beginPath();
+      ctx.roundRect(p.x - tw/2, p.y - r*2 - 20, tw, 18, 4);
+      ctx.fill();
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 11px Segoe UI';
+      ctx.fillText(p.name, p.x, p.y - r*2 - 11);
+    }
+    ctx.restore();
+  });
+}
+
+// ─── 캔버스 이벤트 ───
+let isDragging = false;
+
+canvas.addEventListener('mousedown', e => {
+  const {offsetX: x, offsetY: y} = e;
+  if (mode === 'draw') {
+    isDragging = true;
+    drawStart = {x, y};
+    drawRect = {x, y, w: 0, h: 0};
+  } else {
+    // 상품 클릭 확인
+    const clicked = products.find(p => {
+      if (p.x == null) return false;
+      return Math.hypot(p.x - x, p.y - y) < 18;
+    });
+    if (clicked) {
+      selectedProduct = clicked;
+      renderProductList();
+      redraw();
+    } else {
+      // 빈 공간 클릭 → 선택된 상품 배치
+      if (selectedProduct) {
+        // 이미 선택된 상품이 있으면 위치 이동
+        openPlacePopup(x, y, selectedProduct);
+      } else {
+        // 새 배치 팝업
+        pendingPlace = {x, y};
+        openPlacePopupFresh(x, y);
+      }
+    }
+  }
+});
+
+canvas.addEventListener('mousemove', e => {
+  const {offsetX: x, offsetY: y} = e;
+  if (mode === 'draw' && isDragging && drawStart) {
+    drawRect = { x: Math.min(drawStart.x, x), y: Math.min(drawStart.y, y), w: Math.abs(x-drawStart.x), h: Math.abs(y-drawStart.y) };
+    redraw();
+    return;
+  }
+  // 툴팁
+  const hovered = products.find(p => {
+    if (p.x == null) return false;
+    return Math.hypot(p.x - x, p.y - y) < 16;
+  });
+  const tt = document.getElementById('tooltip');
+  if (hovered) {
+    document.getElementById('tt-name').textContent = '📦 ' + hovered.name;
+    document.getElementById('tt-zone').textContent = '🏷️ ' + (hovered.zoneName || '');
+    document.getElementById('tt-note').textContent = hovered.note ? '💬 ' + hovered.note : '';
+    tt.style.display = 'block';
+    tt.style.left = (x + 16) + 'px';
+    tt.style.top = (y - 10) + 'px';
+  } else {
+    tt.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (mode === 'draw' && isDragging && drawRect && drawRect.w > 20 && drawRect.h > 20) {
+    // 구역 이름 묻기
+    const zoneName = prompt('이 구역의 이름을 입력하세요:', '새 구역');
+    if (zoneName) {
+      const zoneId = 'z_' + Date.now();
+      const color = selectedColor;
+      // 새 존 추가
+      zones.push({ id: zoneId, name: zoneName, color });
+      db.collection("apps/app-muid8bzd/items").add({ type: 'zone', zoneId, name: zoneName, color });
+      // 그려진 구역 저장
+      db.collection("apps/app-muid8bzd/items").add({
+        type: 'drawnZone',
+        zoneId, name: zoneName, color,
+        x: drawRect.x, y: drawRect.y, w: drawRect.w, h: drawRect.h
+      });
+    }
+    drawRect = null; drawStart = null;
+  }
+  isDragging = false;
+  drawRect = null;
+  redraw();
+});
+
+canvas.addEventListener('mouseleave', () => {
+  document.getElementById('tooltip').style.display = 'none';
+  if (isDragging) { isDragging = false; drawRect = null; redraw(); }
+});
+
+// 터치 지원
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const rect = canvas.getBoundingClientRect();
+  const x = t.clientX - rect.left;
+  const y = t.clientY - rect.top;
+  const clicked = products.find(p => p.x != null && Math.hypot(p.x-x, p.y-y) < 22);
+  if (clicked) { selectedProduct = clicked; renderProductList(); redraw(); }
+  else if (selectedProduct) { openPlacePopup(x, y, selectedProduct); }
+  else { pendingPlace = {x,y}; openPlacePopupFresh(x,y); }
+}, {passive: false});
+
+// ─── 팝업 ───
+function openPlacePopup(x, y, product) {
+  pendingPlace = {x, y, productId: product.id};
+  document.getElementById('pp-name').value = product.name;
+  document.getElementById('pp-name').disabled = true;
+  const sel = document.getElementById('pp-zone');
+  updateZoneSelects();
+  sel.value = product.zoneId || '';
+  document.getElementById('pp-note').value = product.note || '';
+  document.getElementById('place-popup').classList.add('show');
+}
+
+function openPlacePopupFresh(x, y) {
+  document.getElementById('pp-name').value = '';
+  document.getElementById('pp-name').disabled = false;
+  updateZoneSelects();
+  document.getElementById('pp-zone').value = '';
+  document.getElementById('pp-note').value = '';
+  document.getElementById('place-popup').classList.add('show');
+}
+
+function closePopup() {
+  document.getElementById('place-popup').classList.remove('show');
+  document.getElementById('pp-name').disabled = false;
+  pendingPlace = null;
+}
+
+function confirmPlace() {
+  if (!pendingPlace) return;
+  const {x, y, productId} = pendingPlace;
+  const zone = document.getElementById('pp-zone').value;
+  const note = document.getElementById('pp-note').value.trim();
+  const zoneObj = zones.find(z => z.id === zone);
+
+  if (productId) {
+    // 기존 상품 위치 업데이트
+    db.collection("apps/app-muid8bzd/items").doc(productId).update({
+      x, y, zoneId: zone,
+      zoneName: zoneObj ? zoneObj.name : '',
+      zoneColor: zoneObj ? zoneObj.color : '#ccc',
+      note,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } else {
+    const name = document.getElementById('pp-name').value.trim();
+    if (!name) { alert('상품명을 입력하세요.'); return; }
+    if (!zone) { alert('구역을 선택하세요.'); return; }
+    db.collection("apps/app-muid8bzd/items").add({
+      type: 'product', name, zoneId: zone,
+      zoneName: zoneObj ? zoneObj.name : '',
+      zoneColor: zoneObj ? zoneObj.color : '#ccc',
+      note, x, y,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+  closePopup();
+}
+
+// ─── 캔버스 초기화 ───
+function clearCanvas() {
+  if (!confirm('지도의 그려진 구역을 모두 삭제하시겠습니까?')) return;
+  db.collection("apps/app-muid8bzd/items").get().then(snap => {
+    snap.forEach(doc => {
+      if (doc.data().type === 'drawnZone') doc.ref.delete();
+    });
+  });
+}
+
+// ─── 색상 팔레트 ───
+function renderColorPicker() {
+  const c = document.getElementById('color-picker');
+  c.innerHTML = '';
+  PALETTE.forEach(color => {
+    const dot = document.createElement('div');
+    dot.className = 'color-dot' + (color === selectedColor ? ' selected' : '');
+    dot.style.background = color;
+    dot.onclick = () => {
+      selectedColor = color;
+      renderColorPicker();
+    };
+    c.appendChild(dot);
+  });
+}
+
+// ─── 초기화 ───
+renderColorPicker();
+updateZoneSelects();
+renderZoneList();
+window.addEventListener('resize', resizeCanvas);
+setTimeout(resizeCanvas, 100);
+
+// 팝업 외부 클릭 닫기
+document.getElementById('place-popup').addEventListener('click', e => {
+  if (e.target === document.getElementById('place-popup')) closePopup();
+});
+</script>
+</body>
+</html>
